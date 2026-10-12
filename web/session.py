@@ -109,9 +109,14 @@ class Session:
 
         self._check_expiry()
         if self.session_id:
-            d = self.store[self.session_id]
-            self.update(d)
-            self._validate_ip()
+            try:
+                d = self.store[self.session_id]
+            except KeyError:
+                # Unknown or unreadable session: continue with a new one, not an error.
+                self.session_id = None
+            else:
+                self.update(d)
+                self._validate_ip()
 
         if not self.session_id:
             self.session_id = self._generate_session_id()
@@ -276,7 +281,13 @@ class DiskStore(Store):
         if os.path.exists(path):
             with open(path, "rb") as fh:
                 pickled = fh.read()
-            return self.decode(pickled)
+            try:
+                return self.decode(pickled)
+            except Exception:
+                # A truncated or corrupt file (interrupted write, full disk) is no session.
+                # Treat it as missing, so the visitor gets a new one rather than an error
+                # on every request until the cookie is cleared.
+                raise KeyError(key)
         else:
             raise KeyError(key)
 

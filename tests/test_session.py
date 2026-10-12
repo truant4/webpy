@@ -140,6 +140,33 @@ class DiskStoreTest(unittest.TestCase):
         self.assertEqual(value, "value")
 
 
+    def testCorruptSessionFileIsMissing(self):
+        dir = tempfile.mkdtemp()
+        store = web.session.DiskStore(dir)
+        with open(os.path.join(dir, "bad"), "wb") as fh:
+            fh.write(b"garbage")
+        self.assertRaises(KeyError, lambda: store["bad"])
+
+    def testCorruptSessionCookieStartsANewSession(self):
+        store = web.session.DiskStore(tempfile.mkdtemp())
+
+        class index:
+            def GET(self):
+                session.count = getattr(session, "count", 0) + 1
+                return "count=%d" % session.count
+
+        app = web.application(("/", "index"), {"index": index})
+        session = web.session.Session(app, store)
+        first = app.request("/")
+        cookie = first.headers["Set-Cookie"].split(";")[0]
+        session_id = cookie.split("=", 1)[1]
+        with open(os.path.join(store.root, session_id), "wb") as fh:
+            fh.write(b"garbage")
+        recovered = app.request("/", headers={"Cookie": cookie})
+        self.assertEqual(recovered.status, "200 OK")
+        self.assertEqual(recovered.data, b"count=1")
+
+
 class DBSessionTest(SessionTest):
     """Session test with db store."""
 
