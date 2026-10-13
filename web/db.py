@@ -1278,12 +1278,31 @@ def import_driver(drivers, preferred=None):
     raise ImportError("Unable to import " + " or ".join(drivers))
 
 
+def _register_sqlite_date_handlers(sqlite_module):
+    """Explicit date adapters and converters for the sqlite3 driver.
+
+    The defaults that sqlite3 used to supply for datetime and date values are
+    deprecated since Python 3.12. Registering the same conversions ourselves keeps
+    the behaviour and removes the warning. They are the recipes from the sqlite3
+    documentation.
+    """
+    sqlite_module.register_adapter(datetime.datetime, lambda value: value.isoformat(" "))
+    sqlite_module.register_adapter(datetime.date, lambda value: value.isoformat())
+    sqlite_module.register_converter(
+        "timestamp", lambda raw: datetime.datetime.fromisoformat(raw.decode())
+    )
+    sqlite_module.register_converter(
+        "date", lambda raw: datetime.date.fromisoformat(raw.decode())
+    )
+
+
 class SqliteDB(DB):
     def __init__(self, **keywords):
         db = import_driver(sqlite_drivers, preferred=keywords.pop("driver", None))
 
         if db.__name__ in ["sqlite3", "pysqlite2.dbapi2"]:
             db.paramstyle = "qmark"
+            _register_sqlite_date_handlers(db)
 
         # sqlite driver doesn't create datatime objects for timestamp columns
         # unless `detect_types` option is passed.
